@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:site" content="@_plute" />
+<meta name="twitter:creator" content="@_plute" />
+<meta property="og:url" content="" />
+<meta property="og:title" content="Turf.jsでボロノイ分割" />
+<meta property="og:description" content="Turf.jsでボロノイ分割" />
+<meta property="og:image" content="./voronoi_turf_image.png" />
+
+
+<script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.js'></script>
+<link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.css' rel='stylesheet' />
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
+	<title>Turf.jsでボロノイ分割</title>
+</head>
+<body>
+<div id='map' style='width: 1000px; height: 800px;'></div>
+<script>
+mapboxgl.accessToken = 'pk.eyJ1Ijoia3lvdG8ta2Fua28iLCJhIjoiY2l4dmM2MnRhMDA5eTMzbnpkc3EzbGdobyJ9.0RPoqvUtZkZVjG5N3oyRIw';
+var map = new mapboxgl.Map({
+    container: 'map',
+    center: [139.254259, 38.7462762],
+    zoom: 6,
+    style: 'mapbox://styles/mapbox/streets-v9'
+});
+
+// get the macdonald json
+macdonaldsJsonURL = "shop.json";
+
+var japanBorder;
+d3.json("japan2.geojson", (err, res_japan) => {
+	console.log(res_japan);
+	japanBorder = res_japan;
+	voronoiForMac();
+});
+
+function voronoiForMac() {
+	d3.json(macdonaldsJsonURL, (err, res) => {
+	  // array of macdonald points
+	  const mdPoints = res.map(d => turf.point([d.longitude, d.latitude], { name: d.name, id: d.id }));
+	  
+	  // generate voronoi
+	  const macdonalds = turf.featureCollection(mdPoints);
+	  const voronoi = turf.voronoi(macdonalds);
+
+
+	  	// add points of macdonalds shops
+	  	for(let i=0; i<200; i++){
+			map.addLayer({
+			    "id": "points"+i,
+			    "type": "circle",
+			    "source": {
+		            "type": "geojson",
+		            "data": mdPoints[i]
+		        },
+			    "paint": {
+		            'circle-color': '#F00',
+		            'circle-radius': 3
+		        }
+			});
+	  	}
+
+	  	
+	  	map.addLayer({
+	        'id': 'maine',
+	        'type': 'fill',
+	        'source':{
+	            "type": "geojson",
+	            "data": voronoi
+	        },
+	        'layout': {},
+	        'paint': {
+	            'fill-color': '#088',
+	            'fill-opacity': 0.4,
+	            'fill-outline-color': '#000'
+
+	        }
+	    });
+	  	
+
+	  });
+};
+
+
+</script>
+</body>
+</html>

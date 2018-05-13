@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.js'></script>
+<link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.45.0/mapbox-gl.css' rel='stylesheet' />
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src='https://npmcdn.com/@turf/turf/turf.min.js'></script>
+	<title>日本一マクドナルドから遠い場所</title>
+</head>
+<body>
+<div id='map' style='width: 1000px; height: 800px;'></div>
+<script>
+mapboxgl.accessToken = 'pk.eyJ1Ijoia3lvdG8ta2Fua28iLCJhIjoiY2l4dmM2MnRhMDA5eTMzbnpkc3EzbGdobyJ9.0RPoqvUtZkZVjG5N3oyRIw';
+var map = new mapboxgl.Map({
+    container: 'map',
+    center: [139.254259, 38.7462762],
+    zoom: 6,
+    style: 'mapbox://styles/mapbox/streets-v9'
+});
+
+// get the macdonald json
+macdonaldsJsonURL = "shop.json";
+
+var japanBorder;
+d3.json("japan2.geojson", (err, res_japan) => {
+	console.log(res_japan);
+	japanBorder = res_japan;
+	voronoiForMac();
+});
+
+function voronoiForMac() {
+	d3.json(macdonaldsJsonURL, (err, res) => {
+	  // array of macdonald points
+	  const mdPoints = res.map(d => turf.point([d.longitude, d.latitude], { name: d.name, id: d.id }));
+	  
+	  // generate voronoi
+	  const macdonalds = turf.featureCollection(mdPoints);
+	  const voronoi = turf.voronoi(macdonalds, { bbox: [120, 20, 160, 50] });
+
+	  console.log(mdPoints);
+	  const relatedVoronoi = [];
+		voronoi.features.forEach(v => {
+		  mdPoints.forEach(m => {
+		    if (turf.booleanPointInPolygon(m, v)) {
+		      // assign a mcdonald id to a voronoi
+		      v.properties.mid = m.properties.id;
+		      relatedVoronoi.push(v);
+		    }
+		  });
+		});
+
+		console.log(japanBorder);
+		const intersectedVoronoi = [];
+		voronoi.features.slice(0, 100).forEach((v, idx) => {
+		  console.log(`${idx}/${voronoi.features.length}`);
+		  japanBorder.features.forEach(f => {
+		  	const c = f.geometry.coordinates;
+			(f.geometry.type === "Polygon" ? [c] : c).forEach(b => {
+		    	// get the intersection with a voronoi and boundaries
+			    const intersection = turf.intersect(turf.polygon(b), v);
+			    if (intersection && intersection.properties && turf.area(turf.polygon(b)) > 2200000000) {
+			        intersection.properties.mid = v.properties.mid;
+			        intersectedVoronoi.push(intersection);
+			     };
+		  	});
+		  });
+		});
+		const intersectedVoronoiFeat = turf.featureCollection(intersectedVoronoi);
+		console.log(intersectedVoronoiFeat);
+
+		// すべてのボロノイ領域に対するmax(ボロノイ領域のすべての頂点に対するmin(頂点で分割されるすべてのボロノイ領域に対するmax(ボロノイ領域の頂点と母点の距離)))
+
+		// max(v1, v2)
+		console.log(intersectedVoronoi);
+		let maxDisForMd = 0;
+		let minDisForMaxDisForMd = 100000000000;
+		let maxDistanceLine = {};
+		let md = '';
+
+
+		// intersectedVoronoi.forEach(v => {
+		//   mdPoints.slice(0, 100).forEach(m => {
+		  	
+		//   	v.geometry.coordinates[0].forEach(c => {
+		//   		if (Array.isArray(c) && c.length === 2) {
+		//   			intersectedVoronoi.forEach(v2 => {
+							
+		// 				  	if (turf.booleanPointInPolygon(c, v2)) {
+		// 				  		if (v.properties.mid === m.properties.id) {
+		// 				  			console.log("=== " + v2.properties.mid);
+		// 				  		}else{
+		// 				  			console.log("!= " + v2.properties.mid);
+		// 				  		}
+		// 				  	};
+						
+		//   			});
+		//   			console.log("another point");
+		// 	  	};
+		// 	});
+		 
+		//   });
+		// });
+
+		//すべてのボロノイ領域に対するmax(ボロノイ領域の頂点と母点の距離)
+		intersectedVoronoi.forEach(v => {
+		  mdPoints.slice(0, 100).forEach(m => {
+		    if (v.properties.mid === m.properties.id) {
+		      v.geometry.coordinates[0].forEach(c => {
+		        if (Array.isArray(c) && c.length === 2) {
+		          const from = m;
+		          const to = turf.point(c);
+		          // get the distance between generatrix and vertex
+		          const distance = turf.distance(from, to);
+		          if (maxDisForMd < distance) {
+		            maxDisForMd = distance;
+		            maxDistanceLine = turf.lineString([m.geometry.coordinates, c]);
+			    	md = m.properties.name;
+			    	//console.log(md);
+		          }
+		        }
+		      });
+		    }
+		  });
+		});
+
+	  map.on('load', function () {
+	  	map.addLayer({
+		    "id": "mdlines",
+		    "type": "line",
+		    "source": {
+	            "type": "geojson",
+	            "data": maxDistanceLine
+	        },
+		    "paint": {
+	            'line-color': '#F00',
+	            'line-width': 3
+	        }
+		});
+
+	  	// add points of macdonalds shops
+	  	for(let i=0; i<100; i++){
+			map.addLayer({
+			    "id": "points"+i,
+			    "type": "circle",
+			    "source": {
+		            "type": "geojson",
+		            "data": mdPoints[i]
+		        },
+			    "paint": {
+		            'circle-color': '#F00',
+		            'circle-radius': 3
+		        }
+			});
+	  	}
+
+	  	// add polygon of voronoi
+	  	for (let i=0; i<100; i++){
+		  	map.addLayer({
+		        'id': 'maine'+i,
+		        'type': 'fill',
+		        'source':{
+		            "type": "geojson",
+		            "data": intersectedVoronoi[i]
+		        },
+		        'layout': {},
+		        'paint': {
+		            'fill-color': '#088',
+		            'fill-opacity': 0.4,
+		            'fill-outline-color': '#000'
+
+		        }
+		    });
+	  	}
+
+	  });
+	});
+};
+
+
+</script>
+</body>
+</html>
